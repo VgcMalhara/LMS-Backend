@@ -30,6 +30,10 @@ if (process.env.NODE_ENV === 'development') {
 
 // 4. Routes (Connect Auth Routes from Day 2)
 app.use('/api/auth', require('./routes/authRoutes'));
+// 4. Routes
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/courses', require('./routes/courseRoutes')); 
+app.use('/api/ai', require('./routes/aiRoutes'));
 
 // Basic test route
 app.get('/', (req, res) => {
