@@ -1,7 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const {
-    createCourse, getCourses, updateCourse, deleteCourse, enrollCourse, getMyEnrollments
+    createCourse, 
+    getCourses, 
+    getCourseById, 
+    updateCourse, 
+    deleteCourse, 
+    enrollCourse, 
+    getMyEnrollments,
+    getInstructorCourses 
 } = require('../controllers/courseController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
@@ -13,8 +20,12 @@ router.route('/')
 // Student only route - Must be defined BEFORE /:id routes to prevent conflict
 router.get('/my-enrollments', protect, authorize('student'), getMyEnrollments);
 
-// Instructor only routes
+// Instructor only route - Must be defined BEFORE /:id routes to prevent conflict
+router.get('/my-courses', protect, authorize('instructor'), getInstructorCourses); 
+
+// Routes for a specific course by ID
 router.route('/:id')
+    .get(protect, getCourseById)
     .put(protect, authorize('instructor'), updateCourse)
     .delete(protect, authorize('instructor'), deleteCourse);
 

@@ -13,10 +13,16 @@ const registerUser = async (req, res) => {
     const { username, email, password, role } = req.body;
 
     try {
-        // Check if the user already exists in the database
-        const userExists = await User.findOne({ email });
-        if (userExists) {
-            return res.status(400).json({ message: 'User already exists' });
+        // Check if a user with the same email already exists
+        const emailExists = await User.findOne({ email });
+        if (emailExists) {
+            return res.status(400).json({ message: 'This email is already registered. Please log in.' });
+        }
+
+        // Check if a user with the same username already exists (Prevents E11000 duplicate error)
+        const usernameExists = await User.findOne({ username });
+        if (usernameExists) {
+            return res.status(400).json({ message: 'This username is already taken. Please choose another one.' });
         }
 
         // Hash the password for security
@@ -41,9 +47,14 @@ const registerUser = async (req, res) => {
                 token: generateToken(user._id)
             });
         } else {
-            res.status(400).json({ message: 'Invalid user data' });
+            res.status(400).json({ message: 'Invalid user data provided.' });
         }
     } catch (error) {
+        // Fallback: Handle any database duplicate key errors cleanly
+        if (error.code === 11000) {
+            const field = Object.keys(error.keyValue)[0];
+            return res.status(400).json({ message: `An account with that ${field} already exists.` });
+        }
         res.status(500).json({ message: error.message });
     }
 };

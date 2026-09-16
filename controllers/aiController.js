@@ -1,62 +1,93 @@
-const { OpenAI } = require('openai');
+const ApiUsage = require('../models/ApiUsage');
 const Course = require('../models/Course');
+const OpenAI = require('openai');
 
-// Initialize OpenAI instance using the API key from .env
+// Initialize OpenAI client (API key is automatically loaded from environment variables)
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-// @desc    Get course recommendations from ChatGPT
+// @desc    Get AI course recommendations and track global API limit (Max 250)
 // @route   POST /api/ai/recommendations
-// @access  Private (Student only)
-const getRecommendations = async (req, res) => {
+const getAIRecommendations = async (req, res) => {
     const { prompt } = req.body;
 
-    if (!prompt) {
-        return res.status(400).json({ message: 'Please provide a prompt' });
-    }
-
     try {
-        // 1. Fetch all available courses from our database
-        const courses = await Course.find().select('title description');
-
-        // If no courses exist, let the user know
-        if (courses.length === 0) {
-            return res.status(404).json({ message: 'No courses available to recommend.' });
+        // 1. Fetch or initialize the global API usage tracker document from MongoDB
+        let usage = await ApiUsage.findOne();
+        if (!usage) {
+            usage = await ApiUsage.create({ totalRequests: 0, maxLimit: 250 });
         }
 
-        // 2. Format the courses into a text list so ChatGPT can read them
-        const courseList = courses.map(c => `ID: ${c._id}, Title: ${c.title}, Description: ${c.description}`).join('\n');
+        // 2. Check if the global request limit (250) has been reached
+        if (usage.totalRequests >= usage.maxLimit) {
+            return res.status(429).json({ 
+                message: 'Global API request limit of 250 has been reached. No more requests are allowed.' 
+            });
+        }
 
-        // 3. Create the System Prompt for ChatGPT
-        const systemMessage = `
-            You are an expert academic advisor. 
-            Here is a list of available courses in our system:
-            ${courseList}
-            
-            Based on the user's career goal or interest, recommend the best courses from the list provided above. 
-            Only recommend courses from the list. Provide a brief explanation of why you recommend each.
-        `;
+        // 3. Fetch all active course titles and IDs from the database
+        const availableCourses = await Course.find({}, '_id title category description');
+        
+        const courseContextList = availableCourses.map(c => 
+            `- Title: "${c.title}" | ID: ${c._id} | Category: ${c.category || 'General'}`
+        ).join('\n');
 
-        // 4. Call OpenAI API
-        const response = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo", // You can use gpt-4o or gpt-3.5-turbo
+        // 4. Increment usage count by 1 and save back to MongoDB
+        usage.totalRequests += 1;
+        await usage.save();
+
+        console.log(`[API Log] Global Request Count: ${usage.totalRequests}/${usage.maxLimit}`);
+
+        // 5. Call OpenAI API with a strict system prompt instructing it to include the Course ID format
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini", // Or gpt-4o-mini
             messages: [
-                { role: "system", content: systemMessage },
+                { 
+                    role: "system", 
+                    content: `You are an intelligent AI career advisor for our LMS platform. 
+Your task is to recommend the best courses to users based on their queries, STRICTLY from the provided list of available courses below.
+When you recommend a course, you MUST include its exact title and append its ID in this exact format: (ID: <course_id>) so that our frontend system can automatically turn it into a clickable link.
+Here is the available course list in our database:
+${courseContextList}` 
+                },
                 { role: "user", content: prompt }
             ],
             temperature: 0.7,
-            max_tokens: 300,
         });
 
-        // 5. Send AI's response back to the frontend
-        const aiRecommendation = response.choices[0].message.content;
-        res.status(200).json({ recommendation: aiRecommendation });
+        const aiReply = completion.choices[0].message.content;
+
+        // 6. Respond with the AI recommendation and updated usage statistics
+        res.status(200).json({ 
+            recommendation: aiReply,
+            requestsRemaining: usage.maxLimit - usage.totalRequests,
+            totalUsed: usage.totalRequests
+        });
 
     } catch (error) {
-        console.error('OpenAI Error:', error.message);
-        res.status(500).json({ message: 'Failed to generate recommendations from AI' });
+        console.error('[API Error]:', error);
+        res.status(500).json({ message: error.message || 'Server error during AI recommendation processing' });
     }
 };
 
-module.exports = { getRecommendations };
+// @desc    Get current global API usage stats
+// @route   GET /api/ai/usage
+const getAIUsage = async (req, res) => {
+    try {
+        let usage = await ApiUsage.findOne();
+        if (!usage) {
+            usage = await ApiUsage.create({ totalRequests: 0, maxLimit: 250 });
+        }
+
+        res.status(200).json({
+            totalUsed: usage.totalRequests,
+            maxLimit: usage.maxLimit,
+            requestsRemaining: usage.maxLimit - usage.totalRequests
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { getAIRecommendations, getAIUsage };
