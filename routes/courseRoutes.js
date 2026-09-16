@@ -8,7 +8,8 @@ const {
     deleteCourse, 
     enrollCourse, 
     getMyEnrollments,
-    getInstructorCourses 
+    getInstructorCourses,
+    getCourseStudents // <-- Added getCourseStudents import
 } = require('../controllers/courseController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
@@ -22,6 +23,10 @@ router.get('/my-enrollments', protect, authorize('student'), getMyEnrollments);
 
 // Instructor only route - Must be defined BEFORE /:id routes to prevent conflict
 router.get('/my-courses', protect, authorize('instructor'), getInstructorCourses); 
+
+// Instructor only route to view enrolled students for a specific course 
+// Must be defined BEFORE /:id routes because both use GET method
+router.get('/:id/students', protect, authorize('instructor'), getCourseStudents); // <-- Added here
 
 // Routes for a specific course by ID
 router.route('/:id')

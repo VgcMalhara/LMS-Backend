@@ -166,6 +166,34 @@ const getMyEnrollments = async (req, res) => {
     }
 };
 
+// @desc    Get enrolled students for a specific course (Instructor only)
+// @route   GET /api/courses/:id/students
+// @access  Private (Instructor only)
+const getCourseStudents = async (req, res) => {
+    try {
+        const courseId = req.params.id;
+
+        // Check if the course exists
+        const course = await Course.findById(courseId);
+        if (!course) {
+            return res.status(404).json({ message: 'Course not found' });
+        }
+
+        // Ensure the logged-in instructor owns this course
+        if (course.instructor.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Not authorized to view students for this course' });
+        }
+
+        // Find enrollments for this course and populate student details
+        const enrollments = await Enrollment.find({ course: courseId })
+            .populate('student', 'username email');
+
+        res.status(200).json(enrollments);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     createCourse,
     getCourses,
@@ -174,5 +202,6 @@ module.exports = {
     updateCourse,
     deleteCourse,
     enrollCourse,
-    getMyEnrollments
+    getMyEnrollments,
+    getCourseStudents
 };
